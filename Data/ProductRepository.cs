@@ -1,28 +1,30 @@
 ﻿// Data/ProductRepository.cs
-using System;
-using System.Collections.Generic;
-using System.Threading;
+using System.Collections.Frozen;
 
 namespace LegacyOrderService.Data
 {
-    public class ProductRepository
+    public sealed class ProductRepository : IProductRepository
     {
-        private readonly Dictionary<string, double> _productPrices = new()
+        // FrozenDictionary gives the fastest possible read performance for a static catalogue.
+        // decimal is used instead of double to avoid floating-point precision errors on money values.
+        // OrdinalIgnoreCase ensures "widget" and "Widget" both resolve correctly.
+        private static readonly FrozenDictionary<string, decimal> ProductPrices =
+            new Dictionary<string, decimal>
+            {
+                ["Widget"]    = 12.99m,
+                ["Gadget"]    = 15.49m,
+                ["Doohickey"] = 8.75m,
+            }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
+        /// <inheritdoc/>
+        /// <exception cref="ProductNotFoundException">Thrown when the product does not exist.</exception>
+        public Task<decimal> GetPriceAsync(string productName, CancellationToken cancellationToken = default)
         {
-            ["Widget"] = 12.99,
-            ["Gadget"] = 15.49,
-            ["Doohickey"] = 8.75
-        };
+            if (!ProductPrices.TryGetValue(productName, out var price))
+                throw new ProductNotFoundException(productName);
 
-        public double GetPrice(string productName)
-        {
-            // Simulate an expensive lookup
-            Thread.Sleep(500);
-
-            if (_productPrices.TryGetValue(productName, out var price))
-                return price;
-
-            throw new Exception("Product not found");
+            return Task.FromResult(price);
         }
     }
 }
+
