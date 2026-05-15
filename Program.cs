@@ -1,87 +1,72 @@
 using LegacyOrderService.Data;
-using LegacyOrderService.Models;
+using LegacyOrderService.Options;
+using LegacyOrderService.Services;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
-namespace LegacyOrderService
-{
-    internal static class Program
+var host = Host.CreateDefaultBuilder(args)
+    .ConfigureServices((context, services) =>
     {
-        // Entry point wired as async to support async repository calls without
-        // blocking the thread pool (.GetAwaiter().GetResult() anti-pattern).
-        static async Task Main(string[] args)
-        {
-            IProductRepository productRepo = new ProductRepository();
-            IOrderRepository   orderRepo   = new OrderRepository();
+        services.Configure<DatabaseOptions>(
+            context.Configuration.GetSection(DatabaseOptions.SectionName));
 
-            Console.WriteLine("Welcome to Order Processor!");
+        services.AddSingleton<IProductRepository, ProductRepository>();
+        services.AddScoped<IOrderRepository, OrderRepository>();
+        services.AddScoped<IOrderService, OrderService>();
+    })
+    .Build();
 
-            string customerName = PromptNonEmpty("Enter customer name:");
-            string productName  = PromptNonEmpty("Enter product name:");
+// Resolve scoped services inside an explicit scope so they are disposed correctly.
+using var scope = host.Services.CreateScope();
+var orderService = scope.ServiceProvider.GetRequiredService<IOrderService>();
 
-            decimal price;
-            try
-            {
-                price = await productRepo.GetPriceAsync(productName);
-            }
-            catch (ProductNotFoundException ex)
-            {
-                Console.Error.WriteLine($"Error: {ex.Message}");
-                Console.Error.WriteLine("Available products: Widget, Gadget, Doohickey");
-                return;
-            }
+Console.WriteLine("Welcome to Order Processor!");
 
-            int quantity = PromptPositiveInt("Enter quantity:");
+var customerName = PromptNonEmpty("Enter customer name:");
+var productName  = PromptNonEmpty("Enter product name:");
+var quantity     = PromptPositiveInt("Enter quantity:");
 
-            // Build the order using the price returned from the catalogue —
-            // previously the code hardcoded 10.0 here and printed the wrong total.
-            var order = new Order
-            {
-                CustomerName = customerName,
-                ProductName  = productName,
-                Quantity     = quantity,
-                Price        = price,
-            };
+try
+{
+    var order = await orderService.PlaceOrderAsync(customerName, productName, quantity);
 
-            Console.WriteLine("\nOrder summary:");
-            Console.WriteLine($"  Customer : {order.CustomerName}");
-            Console.WriteLine($"  Product  : {order.ProductName}");
-            Console.WriteLine($"  Qty      : {order.Quantity}");
-            Console.WriteLine($"  Unit     : {order.Price:C}");
-            Console.WriteLine($"  Total    : {order.Total:C}");
+    Console.WriteLine("\nOrder summary:");
+    Console.WriteLine($"  Customer : {order.CustomerName}");
+    Console.WriteLine($"  Product  : {order.ProductName}");
+    Console.WriteLine($"  Qty      : {order.Quantity}");
+    Console.WriteLine($"  Unit     : {order.Price:C}");
+    Console.WriteLine($"  Total    : {order.Total:C}");
+    Console.WriteLine("\nDone.");
+}
+catch (ProductNotFoundException ex)
+{
+    Console.Error.WriteLine($"Error: {ex.Message}");
+    Console.Error.WriteLine("Available products: Widget, Gadget, Doohickey");
+}
 
-            Console.WriteLine("\nSaving order...");
-            await orderRepo.SaveAsync(order);
-            Console.WriteLine("Done.");
-        }
+static string PromptNonEmpty(string prompt)
+{
+    while (true)
+    {
+        Console.WriteLine(prompt);
+        var value = Console.ReadLine()?.Trim();
+        if (!string.IsNullOrEmpty(value))
+            return value;
 
-        // ---------------------------------------------------------------------------
-        // Small helpers that keep Main readable without adding unnecessary abstraction
-        // ---------------------------------------------------------------------------
+        Console.Error.WriteLine("Input cannot be empty. Please try again.");
+    }
+}
 
-        private static string PromptNonEmpty(string prompt)
-        {
-            while (true)
-            {
-                Console.WriteLine(prompt);
-                var value = Console.ReadLine()?.Trim();
-                if (!string.IsNullOrEmpty(value))
-                    return value;
+static int PromptPositiveInt(string prompt)
+{
+    while (true)
+    {
+        Console.WriteLine(prompt);
+        var raw = Console.ReadLine();
+        if (int.TryParse(raw, out int value) && value > 0)
+            return value;
 
-                Console.Error.WriteLine("Input cannot be empty. Please try again.");
-            }
-        }
-
-        private static int PromptPositiveInt(string prompt)
-        {
-            while (true)
-            {
-                Console.WriteLine(prompt);
-                var raw = Console.ReadLine();
-                if (int.TryParse(raw, out int value) && value > 0)
-                    return value;
-
-                Console.Error.WriteLine("Please enter a positive whole number.");
-            }
-        }
+        Console.Error.WriteLine("Please enter a positive whole number.");
     }
 }
 
