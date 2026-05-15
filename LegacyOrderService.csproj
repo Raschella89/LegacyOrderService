@@ -5,6 +5,8 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Prevent the SDK from picking up .cs files inside nested test project -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);LegacyOrderService.Tests/**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
